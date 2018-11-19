@@ -1,0 +1,163 @@
+---
+title: "Kings_Pred"
+date: "13 November 2018"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+### Importing the libraries and data
+```{r}
+library(GGally)
+library(dplyr)
+library(caTools)
+library(corrplot)
+library(ggplot2)
+library(scales)
+library(ggrepel)
+library(randomForest)
+library(lubridate)
+```
+
+```{r}
+data <- read.csv("C:/Users/HP/Desktop/kc_house_data2.csv")
+```
+
+### Price distribution Histogram
+```{r}
+ggplot(data=data, aes(x=price)) +
+  geom_histogram(aes(y = ..density..), binwidth = 50000, col="black", fill="blue", alpha=0.2) +
+  scale_x_continuous(breaks = seq(0, 4000000, 500000), limits=c(0, 4000000), labels = dollar_format()) + 
+  geom_density(col="red") +
+  labs(title="Price Distribution") +
+  labs(x="Price", y="Count")
+```
+
+
+# Correlation among variables and Sales Price
+```{r}
+ggpairs(data, columns = c(15, 1:5), title="Correlation Matrix",               
+        mapping= aes(fill = ""),
+        lower = list(
+          continuous = "smooth",
+          combo = "facetdensity",
+          mapping = aes(color = "red")),
+        upper = list(continuous = wrap("cor", size = 3, hjust=0.8)))
+
+ggpairs(data, columns = c(15, 6:10, 16), title="Correlation Matrix",               
+        mapping= aes(fill = ""),
+        lower = list(
+          continuous = "smooth",
+          combo = "facetdensity",
+          mapping = aes(color = "red")),
+        upper = list(continuous = wrap("cor", size = 3, hjust=0.8)))
+
+ggpairs(data, columns = c(15, 11:14, 17), title="Correlation Matrix",               
+        mapping= aes(fill = ""),
+        lower = list(
+          continuous = "smooth",
+          combo = "facetdensity",
+          mapping = aes(color = "red")),
+        upper = list(continuous = wrap("cor", size = 3, hjust=0.8)))
+
+cor_Var <- cor(data, use="pairwise.complete.obs")
+cor_sorted <- as.matrix(sort(cor_Var[,'price'], decreasing = TRUE))
+CorHigh <- names(which(apply(cor_sorted, 1, function(x) abs(x)>0.5)))
+cor_Var <- cor_Var[CorHigh, CorHigh]
+corrplot.mixed(cor_Var, tl.col="black", tl.pos = "lt")
+```
+
+### Scatter plot Price vs Sqft_living
+```{r}
+ggplot(data=data, aes(x=sqft_living, y=price)) +
+  geom_point(col='blue') + geom_smooth(method = "lm", se=FALSE, color="black") +
+  scale_y_continuous(breaks= seq(0, 8000000, 500000), labels = comma) +
+  scale_x_continuous(breaks= seq(0, 14000, 1500), labels = comma)
+
+```
+
+### Box plot Price vs Grade
+```{r}
+ggplot(data=data, aes(x=grade, y=price, group=grade, color=grade))+
+  geom_boxplot() + labs(x='Overall Quality', y='Price') +
+  scale_y_continuous(breaks= seq(0, 8000000, 500000), labels = comma)
+```
+
+
+### Box plot Price vs Bathrooms
+```{r}
+ggplot(data=data, aes(x=bathrooms, y=price, group=bathrooms, color=bathrooms))+
+  geom_boxplot() + labs(x='Bathrooms', y='Price') +
+  scale_y_continuous(breaks= seq(0, 8000000, 500000), labels = comma)
+```
+
+### Box plot Price vs view
+```{r}
+ggplot(data=data, aes(x=view, y=price, group=view, color=view))+
+  geom_boxplot() + labs(x='View', y='Price') +
+  scale_y_continuous(breaks= seq(0, 8000000, 500000), labels = comma)
+
+```
+
+### Box plot Price vs latitude
+```{r}
+boxplot(data$price ~ data$lat, main="Price vs. Latitude", xlab="Latitude", ylab="Price")
+```
+
+### Scatter plot Price vs latitude
+```{r}
+ggplot(data=data, aes(x=lat, y=price)) +
+  geom_point(col='blue') +
+  scale_y_continuous(breaks= seq(0, 8000000, 500000), labels = dollar_format()) +
+  scale_x_continuous(breaks= seq(47, 48, 0.02)) +
+  xlab("Latitude(in degrees)")
+
+```
+
+### Finding variable importance with a quick Random Forest
+```{r}
+set.seed(2018)
+quick_RF <- randomForest(x=data[1:1460,-15], y=data$price[1:1460], ntree=100,importance=TRUE)
+imp_RF <- importance(quick_RF)
+imp_DF <- data.frame(Variables = row.names(imp_RF), MSE = imp_RF[,1])
+imp_DF <- imp_DF[order(imp_DF$MSE, decreasing = TRUE),]
+
+ggplot(imp_DF[1:16,], aes(x=reorder(Variables, MSE), y=MSE, fill=MSE)) + 
+  geom_bar(stat = 'identity') + 
+  labs(x = 'Variables', y= '% increase MSE if variable is randomly permuted') + 
+  coord_flip() + theme(legend.position="none")
+```
+
+### Finding Age
+```{r}
+# For age scatter: 
+data2 <- read.csv("C:/Users/HP/Desktop/kc_house_data.csv")
+#d <- as.Date("20141013", "%Y%m%d")
+data2$yr_l = pmax(data2$yr_built, data2$yr_renovated)
+data2$age <- year(as.Date(data2$date, "%Y%m%d")) - (data2$yr_l)
+
+ggplot(data2, aes(x=age, y=price))+
+  geom_point(col='blue') + geom_smooth(method = "lm", se=FALSE, color="black", aes(group=1)) +
+  scale_y_continuous(breaks= seq(0, 8000000, 500000), labels = dollar_format())
+
+```
+
+```{r}
+split = sample.split(data$price, SplitRatio = 0.7)
+training_set = subset(data, split == TRUE)
+test_set = subset(data, split == FALSE)
+model <- lm(price ~ sqft_living + bathrooms + grade + bedrooms + condition + floors + lat + new_year + view + waterfront, data=training_set)
+summary(model)
+```
+
+### Random Forest
+```{r}
+output.forest <- randomForest(price ~ sqft_living + bathrooms + grade + bedrooms + condition + floors + lat + new_year + view + waterfront, data=training_set)
+
+# View the forest results.
+print(output.forest) 
+
+```
+
